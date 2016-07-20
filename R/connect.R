@@ -48,6 +48,12 @@
 #' ## or
 #' connect(headers = add_headers(list(a = 5)))
 #' }
+get_context_path <- function(es_host) {
+  sub("^.*?(/)", "\1", es_host)
+}
+strip_context_path <- function(es_host) {
+  sub("/.*$", "", es_host)
+}
 connect <- function(es_host = "127.0.0.1", es_port = 9200, 
                     es_transport_schema = "http", es_user = NULL,
                     es_pwd = NULL, force = FALSE, errors = "simple", 
@@ -64,20 +70,33 @@ connect <- function(es_host = "127.0.0.1", es_port = 9200,
     message("Found http or https on es_host, stripping off, see the docs")
     es_host <- sub("^http[s]?://", "", es_host)
   }
+
+  # If es_host contains a context path, strip the host up to the first slash
+  # e.g. www.example.com/my/es/instance -> my/es/instance
+  #es_context_path <- sub("^.*?(/)", "\1", es_host)
+  es_context_path <- get_context_path(es_host)
   
   auth <- es_auth(es_host = es_host, es_port = es_port, 
                   es_transport_schema = es_transport_schema, es_user = es_user,
                   es_pwd = es_pwd, force = force)
+
   if (is.null(auth$port) || nchar(auth$port) == 0) {
     baseurl <- sprintf("%s://%s", auth$transport, auth$host)
   } else {
-    baseurl <- sprintf("%s://%s:%s", auth$transport, auth$host, auth$port)
+    if (nchar(es_context_path) > 0) {
+        #list(host = host, port = port, transport = transport, context_path = context_path, host_no_context_path = host_no_context_path)
+        baseurl <- sprintf("%s://%s:%s/%s", auth$transport, auth$host_no_context_path, auth$port, es_context_path)
+    } else {
+        baseurl <- sprintf("%s://%s:%s", auth$transport, auth$host, auth$port)
+    }
   }
+
   userpwd <- if (!is.null(es_user) && !is.null(es_pwd)) {
     authenticate(es_user, es_pwd)
   } else {
     NULL
   }
+
   res <- tryCatch(GET(baseurl, c(userpwd, ...)), error = function(e) e)
   if ("error" %in% class(res)) {
     stop(sprintf("\n  Failed to connect to %s\n  Remember to start Elasticsearch before connecting", baseurl), call. = FALSE)
@@ -171,7 +190,6 @@ print.es_conn <- function(x, ...){
 #' @param es_base (character) deprecated, use es_host
 es_auth <- function(es_host = NULL, es_port = NULL, es_transport_schema = NULL, 
                     es_user = NULL, es_pwd = NULL, force = FALSE, es_base = NULL) {
-  
   calls <- names(sapply(match.call(), deparse))[-1]
   calls_vec <- "es_base" %in% calls
   if (any(calls_vec)) {
@@ -206,7 +224,9 @@ es_auth <- function(es_host = NULL, es_port = NULL, es_transport_schema = NULL,
   Sys.setenv(ES_PORT = port)
   Sys.setenv(ES_USER = user)
   Sys.setenv(ES_PWD = pwd)
-  list(host = host, port = port, transport = transport)
+  context_path <- get_context_path(host)
+  host_no_context_path <- strip_context_path(host)
+  list(host = host, port = port, transport = transport, context_path = context_path, host_no_context_path = host_no_context_path)
 }
 
 ifnull <- function(x, y){
