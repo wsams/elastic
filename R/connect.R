@@ -70,11 +70,6 @@ connect <- function(es_host = "127.0.0.1", es_port = 9200,
     message("Found http or https on es_host, stripping off, see the docs")
     es_host <- sub("^http[s]?://", "", es_host)
   }
-
-  # If es_host contains a context path, strip the host up to the first slash
-  # e.g. www.example.com/my/es/instance -> my/es/instance
-  #es_context_path <- sub("^.*?(/)", "\1", es_host)
-  es_context_path <- get_context_path(es_host)
   
   auth <- es_auth(es_host = es_host, es_port = es_port, 
                   es_transport_schema = es_transport_schema, es_user = es_user,
@@ -83,9 +78,9 @@ connect <- function(es_host = "127.0.0.1", es_port = 9200,
   if (is.null(auth$port) || nchar(auth$port) == 0) {
     baseurl <- sprintf("%s://%s", auth$transport, auth$host)
   } else {
-    if (nchar(es_context_path) > 0) {
-        #list(host = host, port = port, transport = transport, context_path = context_path, host_no_context_path = host_no_context_path)
-        baseurl <- sprintf("%s://%s:%s/%s", auth$transport, auth$host_no_context_path, auth$port, es_context_path)
+    # If the es_host contains a context path, add it back
+    if (nchar(auth$context_path) > 0) {
+        baseurl <- sprintf("%s://%s:%s/%s", auth$transport, auth$host_no_context_path, auth$port, auth$context_path)
     } else {
         baseurl <- sprintf("%s://%s:%s", auth$transport, auth$host, auth$port)
     }
