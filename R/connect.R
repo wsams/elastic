@@ -4,6 +4,8 @@
 #' @export
 #'
 #' @param es_host (character) The base host, defaults to \code{127.0.0.1}
+#' @param es_context_path (character) If your host contains a context path, such as
+#' https://example.com/es, set \code{es_context_path = "/es"}
 #' @param es_port (character) port to connect to, defaults to \code{9200} (optional)
 #' @param es_transport_schema (character) http or https. Default: \code{http}
 #' @param es_user (character) User name, if required for the connection. You can specify, 
@@ -48,16 +50,13 @@
 #' ## or
 #' connect(headers = add_headers(list(a = 5)))
 #' }
-get_context_path <- function(es_host) {
-  sub("^.*?(/)", "\1", es_host)
-}
-strip_context_path <- function(es_host) {
-  sub("/.*$", "", es_host)
-}
-connect <- function(es_host = "127.0.0.1", es_port = 9200, 
+connect <- function(es_host = "127.0.0.1", es_context_path = NULL, es_port = 9200, 
                     es_transport_schema = "http", es_user = NULL,
                     es_pwd = NULL, force = FALSE, errors = "simple", 
                     es_base = NULL, headers = NULL, ...) {
+
+  # Ensure a single beginning slash
+  es_context_path <- sub("^/?/*", "/", es_context_path)
 
   calls <- names(sapply(match.call(), deparse))[-1]
   calls_vec <- "es_base" %in% calls
@@ -74,15 +73,17 @@ connect <- function(es_host = "127.0.0.1", es_port = 9200,
   auth <- es_auth(es_host = es_host, es_port = es_port, 
                   es_transport_schema = es_transport_schema, es_user = es_user,
                   es_pwd = es_pwd, force = force)
-
   if (is.null(auth$port) || nchar(auth$port) == 0) {
-    baseurl <- sprintf("%s://%s", auth$transport, auth$host)
-  } else {
-    # If the es_host contains a context path, add it back
-    if (nchar(auth$context_path) > 0) {
-        baseurl <- sprintf("%s://%s:%s/%s", auth$transport, auth$host_no_context_path, auth$port, auth$context_path)
+    if (is.null(es_context_path)) {
+        baseurl <- sprintf("%s://%s", auth$transport, auth$host)
     } else {
+        baseurl <- sprintf("%s://%s%s", auth$transport, auth$host, es_context_path)
+    }
+  } else {
+    if (is.null(es_context_path)) {
         baseurl <- sprintf("%s://%s:%s", auth$transport, auth$host, auth$port)
+    } else {
+        baseurl <- sprintf("%s://%s:%s%s", auth$transport, auth$host, auth$port, es_context_path)
     }
   }
 
@@ -91,7 +92,6 @@ connect <- function(es_host = "127.0.0.1", es_port = 9200,
   } else {
     NULL
   }
-
   res <- tryCatch(GET(baseurl, c(userpwd, ...)), error = function(e) e)
   if ("error" %in% class(res)) {
     stop(sprintf("\n  Failed to connect to %s\n  Remember to start Elasticsearch before connecting", baseurl), call. = FALSE)
@@ -177,6 +177,7 @@ print.es_conn <- function(x, ...){
 #' Set authentication details
 #' @keywords internal
 #' @param es_host (character) Base url
+#' @param es_context_path (character) Context path of base url. e.g.\code{/es/path}
 #' @param es_port (character) Port
 #' @param es_transport_schema (character) http or https. Default: \code{http}
 #' @param es_user (character) User name
@@ -185,6 +186,7 @@ print.es_conn <- function(x, ...){
 #' @param es_base (character) deprecated, use es_host
 es_auth <- function(es_host = NULL, es_port = NULL, es_transport_schema = NULL, 
                     es_user = NULL, es_pwd = NULL, force = FALSE, es_base = NULL) {
+  
   calls <- names(sapply(match.call(), deparse))[-1]
   calls_vec <- "es_base" %in% calls
   if (any(calls_vec)) {
@@ -219,9 +221,7 @@ es_auth <- function(es_host = NULL, es_port = NULL, es_transport_schema = NULL,
   Sys.setenv(ES_PORT = port)
   Sys.setenv(ES_USER = user)
   Sys.setenv(ES_PWD = pwd)
-  context_path <- get_context_path(host)
-  host_no_context_path <- strip_context_path(host)
-  list(host = host, port = port, transport = transport, context_path = context_path, host_no_context_path = host_no_context_path)
+  list(host = host, port = port, transport = transport)
 }
 
 ifnull <- function(x, y){
