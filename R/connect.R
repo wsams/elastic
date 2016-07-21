@@ -70,22 +70,14 @@ connect <- function(es_host = "127.0.0.1", es_context_path = NULL, es_port = 920
     es_host <- sub("^http[s]?://", "", es_host)
   }
   
-  auth <- es_auth(es_host = es_host, es_port = es_port, 
+  auth <- es_auth(es_host = es_host, es_context_path = es_context_path, es_port = es_port, 
                   es_transport_schema = es_transport_schema, es_user = es_user,
                   es_pwd = es_pwd, force = force)
-  if (is.null(auth$port) || nchar(auth$port) == 0) {
-    if (is.null(es_context_path)) {
-        baseurl <- sprintf("%s://%s", auth$transport, auth$host)
-    } else {
-        baseurl <- sprintf("%s://%s%s", auth$transport, auth$host, es_context_path)
-    }
-  } else {
-    if (is.null(es_context_path)) {
-        baseurl <- sprintf("%s://%s:%s", auth$transport, auth$host, auth$port)
-    } else {
-        baseurl <- sprintf("%s://%s:%s%s", auth$transport, auth$host, auth$port, es_context_path)
-    }
-  }
+  # www.example.com:443/my-es #message(auth$host)
+  #https #message(auth$transport)
+  #443 #message(auth$port)
+  #/my-es #message(es_context_path)
+  baseurl <- sprintf("%s://%s", auth$transport, auth$host)
 
   userpwd <- if (!is.null(es_user) && !is.null(es_pwd)) {
     authenticate(es_user, es_pwd)
@@ -129,11 +121,7 @@ connection <- function() {
                port = Sys.getenv("ES_PORT"), 
                transport = Sys.getenv("ES_TRANSPORT"),
                user = Sys.getenv("ES_USER"))
-  if (is.null(auth$port) || nchar(auth$port) == 0) {
-    baseurl <- sprintf("%s://%s", auth$transport, auth$host)
-  } else {
-    baseurl <- sprintf("%s://%s:%s", auth$transport, auth$host, auth$port)
-  }
+  baseurl <- sprintf("%s://%s", auth$transport, auth$host)
   res <- tryCatch(GET(baseurl, make_up()), error = function(e) e)
   if ("error" %in% class(res)) {
     stop(sprintf("\n  Failed to connect to %s\n  Remember to start Elasticsearch before connecting", baseurl), call. = FALSE)
@@ -184,8 +172,9 @@ print.es_conn <- function(x, ...){
 #' @param es_pwd (character) Password
 #' @param force (logical) Force update
 #' @param es_base (character) deprecated, use es_host
-es_auth <- function(es_host = NULL, es_port = NULL, es_transport_schema = NULL, 
-                    es_user = NULL, es_pwd = NULL, force = FALSE, es_base = NULL) {
+es_auth <- function(es_host = NULL, es_context_path = NULL, es_port = NULL,
+                    es_transport_schema = NULL, es_user = NULL, es_pwd = NULL,
+                    force = FALSE, es_base = NULL) {
   
   calls <- names(sapply(match.call(), deparse))[-1]
   calls_vec <- "es_base" %in% calls
@@ -198,6 +187,14 @@ es_auth <- function(es_host = NULL, es_port = NULL, es_transport_schema = NULL,
   transport <- ifnull(es_transport_schema, 'ES_TRANSPORT_SCHEMA')
   user <- ifnull(es_user, 'ES_USER')
   pwd <- ifnull(es_pwd, 'ES_PWD')
+
+  if (!is.null(es_context_path)) {
+    if (is.null(es_port) || nchar(es_port) == 0) {
+        host <- sprintf("%s%s", host, es_context_path);
+    } else {
+        host <- sprintf("%s:%s%s", host, es_port, es_context_path);
+    }
+  }
 
   if (identical(host, "") || force) {
     if (!interactive()) {
